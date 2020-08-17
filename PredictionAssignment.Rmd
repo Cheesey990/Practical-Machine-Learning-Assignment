@@ -1,0 +1,95 @@
+---
+title: "Prediction Assignment"
+author: "J Cheeseman"
+date: "16/08/2020"
+output: html_document
+---
+
+# Introduction
+
+  A group of health enthusiasts took measurements about themselves to improve their health. Specifically to show how well they have completed a particular activity by looking at accelerometer data from the belt, forearm, arm and dumbbell from 6 participants.
+
+  I am assigned to predict the manner in which the participants completed the exercise by looking at the "classe" variable within the data set. The classes are as follows: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+  
+ The data is available from:
+  *Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.*
+  
+# Assessing data
+
+```{r, echo=TRUE, results='hide'}
+
+ # Download training data
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "./pml-training.csv")
+
+ # Read training data
+
+Training <- read.csv("pml-training.csv")
+
+ # Download testing data
+ download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "./pml-testing.csv")
+
+ # Read testing data
+
+Testing <- read.csv("pml-testing.csv")
+
+```
+
+After downloading the data, I assess the content of the Training data. There are a lot of variables of which some is time entry related and not useful for prediction. There is also a lot of columns with missing values. Therefore, the data needs to be refined in order to select which variables to use. I removed the NA columns from the Training data. I have done the same thing with the Testing data to be consistent.
+```{r, echo=TRUE, results='hide'}
+
+ CleanTrain <- Training[, colSums(is.na(Training)) == 0]
+ CleanTest <- Testing[, colSums(is.na(Testing))==0]
+
+```
+
+The first few entries are related to time entries and not helpful with assessing predictors. I will remove them from the data set.
+
+```{r, echo=TRUE,results='hide'}
+TrimTrain <- CleanTrain[,-c(1:7)]
+TrimTest <- CleanTest[,-c(1:7)]
+```
+
+I also need to remove covariates or classifiers which have almost zero variance, as these classifiers will not add much value to the prediction model:
+
+```{r, echo=TRUE, results='hide'}
+library(caret)
+ 
+TrimTrain <- TrimTrain[, -nearZeroVar(TrimTrain)]
+
+
+```
+
+The test data does not have the "classe" column in it. Therefore, I will need to create a separate validation data set in order for me to assess the accuracy.
+
+```{r echo=TRUE, results='hide'}
+ set.seed(25)
+ inTrain <- createDataPartition(TrimTrain$classe, p=0.7, list = FALSE)
+ FinalTrain <- TrimTrain[inTrain,]
+ Validation <- TrimTrain[-inTrain,]
+ FinalTrain$classe <- factor(FinalTrain$classe)
+ Validation$classe <- factor(Validation$classe)
+
+```
+
+ #Building Predictor Model
+
+ I will choose to use the gradient boosting model using trees (i.e. method = "gbm"). I will perform cross validation to ensure that the model is not over-predicting. The reason I have chosen to use is to build stronger predictors from weaker ones and minimise the error as a result.
+
+```{r echo=TRUE}
+
+set.seed(25)
+ControlBoost <- trainControl(method = "repeatedcv", repeats = 1, number = 3)
+FitModGBM <- train(classe ~ ., data=FinalTrain, method = "gbm", trControl = ControlBoost, verbose = FALSE)
+FitModGBM
+```
+ #Validating Predictor Model
+ 
+I use the above model to predict my validation data then produce a Confusion Matrix to assess overall accuracy:
+
+```{r echo=TRUE}
+PredictGBM <- predict(FitModGBM, Validation)
+confusionMatrix(PredictGBM, Validation$classe)
+
+```
+
+This shows the overall accuracy is 96.55% or the expected out of sample error is to be 1 - 96.55% = 3.45%. This is a low level of error and should be a good predictor for the testing data set.
